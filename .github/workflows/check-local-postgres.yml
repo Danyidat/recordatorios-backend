@@ -1,0 +1,45 @@
+name: 01 - Verificar Docker PostgreSQL Local
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/check-local-postgres.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify-local-postgres:
+    name: Verificar Docker y PostgreSQL local
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 5
+    steps:
+      - name: Comprobar Docker y contenedor PostgreSQL
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            echo "::error::$1"
+            exit 1
+          }
+
+          docker info >/dev/null 2>&1 || fail "Docker no responde desde el runner. Comprueba Docker Desktop y la integración WSL2."
+
+          docker inspect recordatorios-postgres-lab >/dev/null 2>&1 || fail "No existe el contenedor recordatorios-postgres-lab."
+
+          project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' recordatorios-postgres-lab)"
+          [[ "$project" == "recordatorios-lab" ]] || fail "El contenedor pertenece al proyecto Compose '$project', no a 'recordatorios-lab'."
+
+          running="$(docker inspect --format '{{.State.Running}}' recordatorios-postgres-lab)"
+          [[ "$running" == "true" ]] || fail "El contenedor recordatorios-postgres-lab no está ejecutándose."
+
+          health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' recordatorios-postgres-lab)"
+          [[ "$health" == "healthy" ]] || fail "PostgreSQL no está saludable. Estado health: $health."
+
+          docker exec recordatorios-postgres-lab pg_isready -U postgres -d recordatorios_db >/dev/null 2>&1 || fail "pg_isready indica que PostgreSQL no acepta conexiones para recordatorios_db."
+
+          echo "DOCKER_POSTGRES_LOCAL_OK"
