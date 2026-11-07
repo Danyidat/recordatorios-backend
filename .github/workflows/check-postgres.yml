@@ -1,0 +1,51 @@
+name: 02 - Verificar Conexion SQL PostgreSQL
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/check-postgres.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify-postgres:
+    name: Ejecutar consulta SQL de solo lectura
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 5
+    steps:
+      - name: Comprobar Docker, proyecto y consulta SQL
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          fail() {
+            echo "::error::$1"
+            exit 1
+          }
+
+          docker info >/dev/null 2>&1 || fail "Docker no responde desde el runner."
+
+          docker inspect recordatorios-postgres-lab >/dev/null 2>&1 || fail "No existe el contenedor recordatorios-postgres-lab."
+
+          project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' recordatorios-postgres-lab)"
+          [[ "$project" == "recordatorios-lab" ]] || fail "El contenedor pertenece al proyecto Compose '$project', no a 'recordatorios-lab'."
+
+          running="$(docker inspect --format '{{.State.Running}}' recordatorios-postgres-lab)"
+          [[ "$running" == "true" ]] || fail "El contenedor PostgreSQL no está ejecutándose."
+
+          result="$(docker exec recordatorios-postgres-lab psql -X -v ON_ERROR_STOP=1 -U postgres -d recordatorios_db -A -t -F '|' -c 'SELECT current_database(), current_user, version();')" || fail "La consulta SQL de solo lectura falló."
+
+          [[ -n "$result" ]] || fail "La consulta SQL no devolvió resultados."
+
+          IFS='|' read -r database db_user db_version <<< "$result"
+          [[ "$database" == "recordatorios_db" ]] || fail "La consulta se conectó a '$database' y no a 'recordatorios_db'."
+          [[ "$db_user" == "postgres" ]] || fail "La consulta se ejecutó como '$db_user' y no como 'postgres'."
+          [[ -n "$db_version" ]] || fail "PostgreSQL no devolvió información de versión."
+
+          echo "Resultado SQL:"
+          echo "$result"
+          echo "POSTGRES_LAB_OK"
