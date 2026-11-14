@@ -1,0 +1,1 @@
+import {HealthController} from '../src/health.controller';describe('HealthController',()=>{it('responde sin DB',()=>{expect(new HealthController().check()).toEqual({status:'ok',service:'mis-recordatorios-api'});});});
