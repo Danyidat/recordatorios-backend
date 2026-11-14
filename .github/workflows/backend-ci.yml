@@ -1,0 +1,21 @@
+name: Backend NestJS CI
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/backend-ci.yml']
+permissions: { contents: read }
+concurrency: { group: backend-ci-${{ github.ref }}, cancel-in-progress: true }
+jobs:
+  build-test:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm install --package-lock-only
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: echo BACKEND_NESTJS_OK
