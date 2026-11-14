@@ -1,0 +1,25 @@
+name: Aplicar migracion PostgreSQL local
+on: { workflow_dispatch: }
+permissions: { contents: read }
+concurrency: { group: postgres-migration-local, cancel-in-progress: false }
+jobs:
+  migrate:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar destino y aplicar SQL aditivo
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          fail(){ echo "::error::$1"; exit 1; }
+          docker info >/dev/null 2>&1 || fail "Docker no responde"
+          docker inspect recordatorios-postgres-lab >/dev/null 2>&1 || fail "Contenedor no encontrado"
+          project="$(docker inspect --format '{{ index .Config.Labels \"com.docker.compose.project\" }}' recordatorios-postgres-lab)"
+          [[ "$project" == "recordatorios-lab" ]] || fail "Proyecto Compose inesperado: $project"
+          [[ "$(docker inspect --format '{{.State.Running}}' recordatorios-postgres-lab)" == true ]] || fail "Contenedor detenido"
+          db="$(docker exec recordatorios-postgres-lab psql -X -U postgres -d postgres -A -t -c \"SELECT datname FROM pg_database WHERE datname='recordatorios_db'\")"
+          [[ "$db" == recordatorios_db ]] || fail "Base objetivo no existe; no se creara"
+          docker exec -i recordatorios-postgres-lab psql -X -v ON_ERROR_STOP=1 -U postgres -d recordatorios_db < database/migrations/001_create_recordatorios.sql
+          docker exec recordatorios-postgres-lab psql -X -v ON_ERROR_STOP=1 -U postgres -d recordatorios_db -c 'SELECT to_regclass(\'public.recordatorios\')'
+          echo MIGRACION_RECORDATORIOS_OK
